@@ -18,9 +18,21 @@
 
 - 你理解的对于类似ucore这样需要进程/虚存/文件系统的操作系统，在硬件设计上至少需要有哪些直接的支持？至少应该提供哪些功能的特权指令？
 
+  硬件设计上要支持虚实地址转换，有足够大的内存和硬盘空间。
+
+  特权指令应该包括切换进程，虚实地址转换中的替换，系统调用。
+
 - 你理解的x86的实模式和保护模式有什么区别？物理地址、线性地址、逻辑地址的含义分别是什么？
 
-- 你理解的risc-v的特权模式有什么区别？不同 模式在地址访问方面有何特征？
+  实模式是一种古老的OS模式，是X86-32为兼容DOS而提出的模式，物理地址空间不超过1MB；保护模式则完整地使用了32位的地址空间，物理内存大小为4GB。
+
+  物理地址是处理器向物理内存存取数据时使用的地址；
+
+  线性地址是应用程序在虚存中使用的地址，在无页机制时与物理地址相同，有页机制时经过页机制转换为物理地址；
+
+  逻辑地址是应用程序直接使用的地址。
+
+- 你理解的risc-v的特权模式有什么区别？不同模式在地址访问方面有何特征？
 
 - 理解ucore中list_entry双向链表数据结构及其4个基本操作函数和ucore中一些基于它的代码实现（此题不用填写内容）
 
@@ -39,6 +51,8 @@
     unsigned gd_off_31_16 : 16;        // high bits of offset in segment
  };
 ```
+
+":"后面的数字代表了地址切分后的值，比如gd_off_15_0代表offset的低16位。
 
 - 对于如下的代码段，
 
@@ -63,11 +77,62 @@ SETGATE(intr, 1,2,3,0);
 ```
 请问执行上述指令后， intr的值是多少？
 
+intr的值是3。
+
 ### 课堂实践练习
 
 #### 练习一
 
 1. 请在ucore中找一段你认为难度适当的AT&T格式X86汇编代码，尝试解释其含义。
+
+   我阅读了Lab1的bootasm.S， 它实现了bootloader的功能，既能进入实模式，也能通过bootstrap转换成保护模式。同时，在进入两个模式的过程中，模式特有的寄存器都完成了初始化。
+
+   ```assembly
+   #切换模式
+   
+   seta20.1:
+       inb $0x64, %al                                  # Wait for not busy(8042 input buffer empty).
+       testb $0x2, %al
+       jnz seta20.1
+   
+       movb $0xd1, %al                                 # 0xd1 -> port 0x64
+       outb %al, $0x64                                 # 0xd1 means: write data to 8042's P2 port
+   
+   seta20.2:
+       inb $0x64, %al                                  # Wait for not busy(8042 input buffer empty).
+       testb $0x2, %al
+       jnz seta20.2
+   
+       movb $0xdf, %al                                 # 0xdf -> port 0x60
+       outb %al, $0x60                                 # 0xdf = 11011111, means set P2's A20 bit(the 1 bit) to 1
+   
+       # Switch from real to protected mode, using a bootstrap GDT
+       # and segment translation that makes virtual addresses
+       # identical to physical addresses, so that the
+       # effective memory map does not change during the switch.
+       lgdt gdtdesc
+       movl %cr0, %eax
+       orl $CR0_PE_ON, %eax
+       movl %eax, %cr0
+   
+       # Jump to next instruction, but in 32-bit code segment.
+       # Switches processor into 32-bit mode.
+       ljmp $PROT_MODE_CSEG, $protcseg
+   
+   #寄存器初始化
+   
+   xorw %ax, %ax                                   # Segment number zero
+   movw %ax, %ds                                   # -> Data Segment
+   movw %ax, %es                                   # -> Extra Segment
+   movw %ax, %ss                                   # -> Stack Segment
+   
+   movw $PROT_MODE_DSEG, %ax                       # Our data segment selector
+   movw %ax, %ds                                   # -> DS: Data Segment
+   movw %ax, %es                                   # -> ES: Extra Segment
+   movw %ax, %fs                                   # -> FS
+   movw %ax, %gs                                   # -> GS
+   movw %ax, %ss                                   # -> SS: Stack Segment
+   ```
 
 2. (option)请在rcore中找一段你认为难度适当的RV汇编代码，尝试解释其含义。
 
